@@ -1,0 +1,42 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Local environment variables (never commit secrets)
+.env
+
+# OS / editor noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Streamlit
+.streamlit/
+
+# Local data (PDF uploads + vector DB persistence)
+data/uploads/*
+data/chroma/*
+# Keep the directories themselves tracked (if present) while ignoring contents
+!data/uploads/.gitkeep
+!data/chroma/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

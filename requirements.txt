@@ -1,0 +1,38 @@
+# NOTE: Version pinning is intentional for reproducible installs on macOS arm64 (M1, CPU-only).
+# Fix applied: ChromaDB 0.5.23 requires tokenizers<=0.20.3, so Transformers must stay <4.47.
+# We pin transformers==4.46.3 and tokenizers==0.20.3 to resolve the dependency conflict.
+
+# --- Backend API (FastAPI) ---
+fastapi==0.115.6                 # REST API for ingestion + Q/A endpoints
+uvicorn[standard]==0.32.1         # Production ASGI server for FastAPI
+python-multipart==0.0.20          # Required for multipart/form-data uploads
+
+# --- Frontend UI ---
+streamlit==1.41.1                 # Simple UI for PDF upload + chat
+requests==2.32.3                  # Streamlit -> FastAPI HTTP calls
+
+# --- Configuration ---
+pydantic-settings==2.7.0          # Typed settings from env/.env (production-friendly)
+python-dotenv==1.0.1              # Local .env loading
+
+# --- PDF ingestion ---
+pypdf==5.1.0                      # PDF text extraction
+
+# --- Embeddings ---
+sentence-transformers==3.3.1      # Embedding models for semantic retrieval
+torch==2.5.1                      # CPU runtime for sentence-transformers + transformers
+
+# --- Vector database (persistent) ---
+chromadb==0.5.23                  # Persistent local vector DB (Chroma)
+
+# --- LLM inference (Hugging Face Transformers) ---
+transformers==4.46.3              # Compatible with Chroma tokenizers constraint; runs Flan-T5
+tokenizers==0.20.3                # Must satisfy chromadb<=0.5.23 requirement
+
+# --- LangChain (RAG-only components) ---
+langchain-core==0.3.29            # Document + runnable primitives
+langchain-text-splitters==0.3.5   # RecursiveCharacterTextSplitter for chunking
+
+# --- Tests ---
+pytest==8.3.4                     # Test runner
+httpx==0.28.1                     # HTTP client for FastAPI tests
