@@ -9,14 +9,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """
-    Centralized, typed configuration.
-
-    Why pydantic-settings:
-    - Strong typing + validation avoids fragile stringly-typed config.
-    - Plays nicely with local .env and Hugging Face Spaces environment variables.
-    """
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -144,13 +136,6 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """
-    Cached settings for the lifetime of the process.
-
-    Why cache:
-    - Settings parsing can touch the filesystem (.env) and environment variables.
-    - Single source of truth avoids subtle config drift across imports.
-    """
     s = Settings()
     s.ensure_dirs()
     return s
