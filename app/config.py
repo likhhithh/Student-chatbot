@@ -89,9 +89,6 @@ class Settings(BaseSettings):
         description="0.0 encourages deterministic extraction from context (reduces hallucinations).",
     )
 
-    # --- API / CORS ---
-    # Streamlit may run on a different origin than FastAPI (especially on Spaces),
-    # so we keep a permissive default and allow tightening via env vars.
     cors_allow_origins: str = Field(
         default="*",
         description="Comma-separated list of allowed origins for CORS; '*' for simplest deploys.",
