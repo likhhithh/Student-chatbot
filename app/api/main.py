@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -15,27 +17,24 @@ from app.config import get_settings
 from app.rag.chain import AnswerResult, get_chain
 from app.rag.chunking import chunk_documents
 from app.rag.embeddings import EmbeddingConfig, SentenceTransformerEmbeddings
-from app.rag.loader import load_pdf
+from app.rag.loader import load_image, load_pdf
 from app.rag.vectorstore import get_vectorstore
 
 logger = logging.getLogger(__name__)
 
 
 _FILENAME_SAFE_RE = re.compile(r"[^a-zA-Z0-9.\-_ ]+")
+_ALLOWED_EXTS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+_IMAGE_EXTS   = {".png", ".jpg", ".jpeg", ".webp"}
+
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 def _sanitize_filename(name: str) -> str:
-    """
-    Make filenames safe for local filesystems and hosted environments.
-
-    Why:
-    - Uploads may contain path separators or special characters.
-    - Deterministic sanitation avoids edge-case failures during persistence and indexing.
-    """
-    base = Path(name).name  # drop any client-provided path components
+    base = Path(name).name
     base = _FILENAME_SAFE_RE.sub("", base).strip()
     base = base.replace(" ", "_")
-    return base or f"upload_{uuid.uuid4().hex}.pdf"
+    return base or f"upload_{uuid.uuid4().hex}.bin"
 
 
 def _unique_path(dir_path: Path, filename: str) -> Path:
@@ -63,15 +62,8 @@ def _unique_path(dir_path: Path, filename: str) -> Path:
 
 
 def _save_upload_file(upload: UploadFile, uploads_dir: Path) -> Path:
-    """
-    Save an UploadFile to disk.
-
-    Why disk-first:
-    - Keeps memory bounded (PDFs can be large).
-    - Enables persistent storage and reproducible indexing.
-    """
     safe_name = _sanitize_filename(upload.filename or "document.pdf")
-    if not safe_name.lower().endswith(".pdf"):
+    if Path(safe_name).suffix.lower() not in _ALLOWED_EXTS:
         safe_name = f"{safe_name}.pdf"
 
     out_path = _unique_path(uploads_dir, safe_name)
@@ -116,13 +108,20 @@ class ClearSessionResponse(BaseModel):
 def create_app() -> FastAPI:
     settings = get_settings()
 
-    # Keep logging simple and predictable across local + Spaces runs.
     logging.basicConfig(
         level=logging.INFO if settings.environment != "test" else logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
     app = FastAPI(title=settings.app_name)
+
+    # Serve the ChatGPT-like UI from /
+    if _STATIC_DIR.exists():
+        app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+        @app.get("/", include_in_schema=False)
+        def serve_ui() -> FileResponse:
+            return FileResponse(str(_STATIC_DIR / "index.html"))
 
     # CORS is required when Streamlit and FastAPI are served from different origins.
     origins = settings.cors_origins_list()
@@ -172,10 +171,14 @@ def create_app() -> FastAPI:
         # Save and ingest sequentially to keep CPU/memory predictable on small instances.
         # (Parallel embedding can saturate CPU and degrade latency for other requests.)
         for upload in files:
-            content_type = (upload.content_type or "").lower()
-            # Content-Type is not trustworthy, but it's a helpful early rejection.
-            if content_type and "pdf" not in content_type:
-                raise HTTPException(status_code=400, detail=f"Only PDF uploads are supported. Got: {content_type}")
+            # Validate extension — content_type is not trustworthy.
+            original_name = upload.filename or "document.pdf"
+            file_ext = Path(original_name).suffix.lower()
+            if file_ext not in _ALLOWED_EXTS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported file type '{file_ext}'. Allowed: PDF, PNG, JPG, JPEG, WEBP.",
+                )
 
             try:
                 saved_path = await run_in_threadpool(_save_upload_file, upload, uploads_dir)
@@ -183,7 +186,6 @@ def create_app() -> FastAPI:
                 logger.exception("Failed to save upload: %s", e)
                 raise HTTPException(status_code=500, detail="Failed to save uploaded file.") from e
             finally:
-                # Make sure underlying spooled temp files are released.
                 try:
                     upload.file.close()
                 except Exception:
@@ -191,12 +193,17 @@ def create_app() -> FastAPI:
 
             stored_files.append(saved_path.name)
 
-            # Load + preprocess
+            # Route to the correct loader based on extension.
+            is_image = saved_path.suffix.lower() in _IMAGE_EXTS
             try:
-                page_docs = await run_in_threadpool(load_pdf, saved_path)
+                if is_image:
+                    page_docs = await run_in_threadpool(load_image, saved_path)
+                else:
+                    page_docs = await run_in_threadpool(load_pdf, saved_path)
             except Exception as e:
-                logger.exception("Failed to load PDF %s: %s", saved_path.name, e)
-                raise HTTPException(status_code=400, detail=f"Failed to read PDF: {saved_path.name}") from e
+                logger.exception("Failed to load %s: %s", saved_path.name, e)
+                label = "image" if is_image else "PDF"
+                raise HTTPException(status_code=400, detail=f"Failed to read {label}: {saved_path.name}") from e
 
             total_pages += len(page_docs)
 
