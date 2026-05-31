@@ -123,6 +123,61 @@ def load_pdfs(paths: Iterable[Path]) -> list[Document]:
     return all_docs
 
 
+_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+def load_image(path: Path) -> list[Document]:
+    """
+    Extract text from an image file (PNG/JPG/WEBP) via OCR using pytesseract.
+
+    Requires:
+    - Pillow  (pip install Pillow)
+    - pytesseract  (pip install pytesseract)
+    - Tesseract OCR binary  (brew install tesseract  on macOS)
+    """
+    if not path.is_file() or path.suffix.lower() not in _IMAGE_EXTS:
+        raise ValueError(f"Not a supported image file: {path}")
+
+    try:
+        from PIL import Image
+        import pytesseract
+    except ImportError as exc:
+        raise RuntimeError(
+            "Image OCR requires Pillow and pytesseract. "
+            "Install them with: pip install Pillow pytesseract  "
+            "and install Tesseract: brew install tesseract"
+        ) from exc
+
+    file_hash = _sha256_file(path)
+
+    try:
+        img = Image.open(path)
+        # Convert to RGB to handle RGBA/P mode images that tesseract may not like.
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        raw = pytesseract.image_to_string(img)
+    except Exception as e:
+        raise RuntimeError(f"OCR failed for '{path.name}': {e}") from e
+
+    cleaned = _clean_text(raw)
+    if not cleaned:
+        logger.warning("No text extracted from image: %s", path.name)
+        return []
+
+    return [
+        Document(
+            page_content=cleaned,
+            metadata={
+                "source": path.name,
+                "file_name": path.name,
+                "file_path": str(path.resolve()),
+                "file_sha256": file_hash,
+                "page": 1,
+            },
+        )
+    ]
+
+
 def load_pdfs_from_dir(uploads_dir: Path) -> list[Document]:
     """
     Load all PDFs from a directory (non-recursive).
