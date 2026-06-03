@@ -1,8 +1,12 @@
+import { useState } from 'react'
+
 export default function Sidebar({
   open, chats, chatsLoading, activeChatId,
   memories, user,
   onNewChat, onLoadChat, onToggle, onSignOut,
 }) {
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+
   if (!open) return null
 
   const avatar = user?.user_metadata?.avatar_url
@@ -87,7 +91,7 @@ export default function Sidebar({
             <div className="sb-user-email">{email}</div>
           </div>
         </div>
-        <button className="sb-signout" onClick={onSignOut} title="Sign out">
+        <button className="sb-signout" onClick={() => setShowLogoutModal(true)} title="Sign out">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
             <polyline points="16 17 21 12 16 7" />
@@ -95,6 +99,58 @@ export default function Sidebar({
           </svg>
         </button>
       </div>
+
+      {/* Logout confirmation modal */}
+      {showLogoutModal && (
+        <div style={modal.overlay} onClick={() => setShowLogoutModal(false)}>
+          <div style={modal.box} onClick={e => e.stopPropagation()}>
+            <div style={modal.icon}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2">
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </div>
+            <h3 style={modal.title}>Sign out?</h3>
+            <p style={modal.sub}>You will be returned to the login screen.</p>
+            <div style={modal.btns}>
+              <button style={modal.cancel} onClick={() => setShowLogoutModal(false)}>Cancel</button>
+              <button style={modal.confirm} onClick={() => { setShowLogoutModal(false); onSignOut() }}>Sign out</button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   )
+}
+
+const modal = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, backdropFilter: 'blur(2px)',
+  },
+  box: {
+    background: '#fff', borderRadius: 16, padding: '28px 28px 24px',
+    width: 320, boxShadow: '0 8px 40px rgba(0,0,0,0.15)',
+    border: '1px solid #e5e7eb', textAlign: 'center',
+  },
+  icon: {
+    width: 48, height: 48, borderRadius: '50%', background: '#f3f4f6',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    margin: '0 auto 14px',
+  },
+  title: { fontSize: 17, fontWeight: 700, color: '#111827', marginBottom: 6 },
+  sub: { fontSize: 13, color: '#6b7280', marginBottom: 22, lineHeight: 1.5 },
+  btns: { display: 'flex', gap: 10 },
+  cancel: {
+    flex: 1, padding: '10px', borderRadius: 10, border: '1.5px solid #e5e7eb',
+    background: '#fff', color: '#374151', fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'inherit',
+  },
+  confirm: {
+    flex: 1, padding: '10px', borderRadius: 10, border: 'none',
+    background: '#ef4444', color: '#fff', fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', fontFamily: 'inherit',
+  },
 }
