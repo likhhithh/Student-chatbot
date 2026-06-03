@@ -29,11 +29,11 @@ class Settings(BaseSettings):
     )
     uploads_dir: Path = Field(
         default=Path("data/uploads"),
-        description="Directory where uploaded PDFs are stored (persistent if supported).",
+        description="Directory where uploaded PDFs are stored. On Render, set to /data/uploads.",
     )
     chroma_persist_dir: Path = Field(
         default=Path("data/chroma"),
-        description="Persistent directory for ChromaDB storage.",
+        description="ChromaDB storage dir. On Render, set to /data/chroma for persistence.",
     )
 
     # --- Chroma / retrieval ---

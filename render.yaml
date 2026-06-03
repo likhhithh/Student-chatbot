@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: studygpt
+    runtime: python
+    buildCommand: pip install -r requirements.txt && cd frontend && npm install && npm run build
+    startCommand: uvicorn app.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENVIRONMENT
+        value: prod
+      - key: AWS_REGION
+        value: ap-south-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: BEDROCK_CHAT_MODEL_ID
+        value: openai.gpt-oss-120b-1:0
+      - key: BEDROCK_EMBEDDING_MODEL_ID
+        value: amazon.titan-embed-text-v2:0
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        value: "*"
+      - key: UPLOADS_DIR
+        value: /data/uploads
+      - key: CHROMA_PERSIST_DIR
+        value: /data/chroma
+    disk:
+      name: chroma-data
+      mountPath: /data
+      sizeGB: 1
