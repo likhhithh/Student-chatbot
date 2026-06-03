@@ -13,7 +13,7 @@ Pillow>=10.0.0
 pytesseract>=0.3.10
 
 # --- Vector database ---
-chromadb==0.5.23
+chromadb==0.6.3
 
 # --- LangChain (chunking only) ---
 langchain-core==0.3.29
