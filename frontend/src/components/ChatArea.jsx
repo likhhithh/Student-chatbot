@@ -23,7 +23,6 @@ export default function ChatArea({ messages, loading, onPromptSelect }) {
       <div className="chat-wrap">
         {showWelcome && (
           <div className="welcome">
-            <img src="/studygpt-logo.png" alt="StudyGPT" className="wlc-logo-img" />
             <h1 className="wlc-h">Welcome to StudyGPT</h1>
             <p className="wlc-sub">
               Upload your PDFs or photos of notes, then ask anything.

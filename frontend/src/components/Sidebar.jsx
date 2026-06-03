@@ -15,6 +15,7 @@ export default function Sidebar({
       <div className="sb-top">
         <div className="logo-wrap">
           <img src="/studygpt-logo.png" alt="StudyGPT" className="sb-logo-img" />
+          <span className="logo-name">StudyGPT</span>
         </div>
         <button className="sb-toggle" onClick={onToggle} title="Collapse">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
