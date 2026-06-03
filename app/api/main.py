@@ -141,9 +141,14 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Frontend not built", "static_dir": str(_STATIC_DIR)}, status_code=503)
         return FileResponse(str(index))
 
-    # Catch-all for React Router (serve index.html for any unmatched path)
+    # Catch-all: serve static files (logo, favicon, etc.) or fall back to index.html
     @app.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str) -> FileResponse:
+    def spa_fallback(full_path: str):
+        # Serve any existing static file first (logo, icons, etc.)
+        static_file = _STATIC_DIR / full_path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(str(static_file))
+        # Fall back to index.html for all SPA routes
         index = _STATIC_DIR / "index.html"
         if not index.exists():
             from fastapi.responses import JSONResponse
