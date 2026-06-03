@@ -124,13 +124,31 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title=settings.app_name)
 
-    # Serve the ChatGPT-like UI from /
+    # Serve React SPA — always register routes; log clearly if static dir is missing
+    logger.info("Static dir: %s (exists=%s)", _STATIC_DIR, _STATIC_DIR.exists())
     if _STATIC_DIR.exists():
+        _assets_dir = _STATIC_DIR / "assets"
+        if _assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
         app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-        @app.get("/", include_in_schema=False)
-        def serve_ui() -> FileResponse:
-            return FileResponse(str(_STATIC_DIR / "index.html"))
+    @app.get("/", include_in_schema=False)
+    @app.head("/", include_in_schema=False)
+    def serve_ui() -> FileResponse:
+        index = _STATIC_DIR / "index.html"
+        if not index.exists():
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "Frontend not built", "static_dir": str(_STATIC_DIR)}, status_code=503)
+        return FileResponse(str(index))
+
+    # Catch-all for React Router (serve index.html for any unmatched path)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str) -> FileResponse:
+        index = _STATIC_DIR / "index.html"
+        if not index.exists():
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "Frontend not built"}, status_code=503)
+        return FileResponse(str(index))
 
     # CORS is required when Streamlit and FastAPI are served from different origins.
     origins = settings.cors_origins_list()
