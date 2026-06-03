@@ -1,101 +1,148 @@
 import { useState, useCallback, useRef } from 'react'
+import { supabase } from '../lib/supabase'
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
-function load(key, def) {
-  try { return JSON.parse(localStorage.getItem(key)) || def } catch { return def }
-}
-
-function save(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
-}
-
-export function useChat(showToast) {
-  const [messages, setMessages] = useState([])
-  const [chats, setChats] = useState(() => load('sb_chats', []))
-  const [docs, setDocs] = useState(() => load('sb_docs', []))
-  const [chatId, setChatId] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(null)
+export function useChat(userId, showToast, buildMemoryContext, saveTopic) {
+  const [messages, setMessages]   = useState([])
+  const [chats, setChats]         = useState([])
+  const [chatId, setChatId]       = useState(null)   // Supabase chat row id
+  const [loading, setLoading]     = useState(false)
+  const [chatsLoading, setChatsLoading] = useState(true)
 
   const sessionRef = useRef(uid())
+  const chatIdRef  = useRef(null) // keep in sync with chatId for callbacks
 
+  // ── Load chat list on mount ──────────────────────────────────────────────
+  const loadChatList = useCallback(async () => {
+    if (!userId) return
+    setChatsLoading(true)
+    const { data } = await supabase
+      .from('chats')
+      .select('id, title, session_id, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if (data) setChats(data)
+    setChatsLoading(false)
+  }, [userId])
+
+  // ── Start new chat ───────────────────────────────────────────────────────
   const startNewChat = useCallback(() => {
     const newSid = uid()
     sessionRef.current = newSid
+    chatIdRef.current  = null
     setChatId(null)
     setMessages([])
     setLoading(false)
     fetch(`/session/clear?session_id=${newSid}`, { method: 'POST' }).catch(() => {})
   }, [])
 
-  const loadChat = useCallback((id) => {
+  // ── Load an existing chat ────────────────────────────────────────────────
+  const loadChat = useCallback(async (id) => {
     const chat = chats.find(c => c.id === id)
     if (!chat) return
+
     setChatId(chat.id)
-    sessionRef.current = chat.sid
-    setMessages([{
-      role: 'assistant',
-      text: `Session restored. Continue your conversation about "${chat.title}"`,
-      sources: [],
-    }])
+    chatIdRef.current = chat.id
+    sessionRef.current = chat.session_id
+
+    // Fetch messages from Supabase
+    const { data: msgs } = await supabase
+      .from('messages')
+      .select('role, content, sources')
+      .eq('chat_id', chat.id)
+      .order('created_at', { ascending: true })
+
+    if (msgs) {
+      setMessages(msgs.map(m => ({
+        role: m.role,
+        text: m.content,
+        sources: m.sources || [],
+      })))
+
+      // Restore backend session memory
+      if (msgs.length > 0) {
+        fetch('/session/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: chat.session_id,
+            messages: msgs.map(m => ({ role: m.role, content: m.content })),
+          }),
+        }).catch(() => {})
+      }
+    }
   }, [chats])
 
+  // ── Upload files ─────────────────────────────────────────────────────────
   const uploadFiles = useCallback(async (files) => {
-    setUploadProgress({ label: 'Uploading files…', pct: 20 })
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
 
-    try {
-      setUploadProgress({ label: 'Uploading files…', pct: 40 })
-      const res = await fetch('/upload', { method: 'POST', body: fd })
-      setUploadProgress({ label: 'Indexing chunks…', pct: 80 })
-
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({ detail: 'Upload failed' }))
-        throw new Error(e.detail || 'Upload failed')
-      }
-      const data = await res.json()
-      setUploadProgress({ label: 'Done', pct: 100 })
-
-      setDocs(prev => {
-        const next = [...prev]
-        files.forEach(f => { if (!next.includes(f.name)) next.push(f.name) })
-        save('sb_docs', next)
-        return next
-      })
-
-      showToast(`✅ Indexed ${data.chunks_indexed} chunks from ${data.stored_files.length} file(s)`, 'ok')
-    } finally {
-      setTimeout(() => setUploadProgress(null), 600)
+    const res = await fetch('/upload', { method: 'POST', body: fd })
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({ detail: 'Upload failed' }))
+      throw new Error(e.detail || 'Upload failed')
     }
+    const data = await res.json()
+    showToast(`Indexed ${data.chunks_indexed} chunks from ${data.stored_files.length} file(s)`, 'ok')
   }, [showToast])
 
+  // ── Send message ─────────────────────────────────────────────────────────
   const sendMessage = useCallback(async (question) => {
     const q = question.trim()
     if (!q || loading) return
 
-    let currentChatId = chatId
+    // ── Create chat row in Supabase if first message ─────────────────────
+    let currentChatId = chatIdRef.current
     if (!currentChatId) {
-      currentChatId = uid()
-      setChatId(currentChatId)
-      setChats(prev => {
-        const next = [{ id: currentChatId, title: q.slice(0, 55), sid: sessionRef.current, ts: Date.now() }, ...prev]
-        save('sb_chats', next)
-        return next
-      })
+      const { data: newChat } = await supabase
+        .from('chats')
+        .insert({
+          user_id:    userId,
+          title:      q.slice(0, 60),
+          session_id: sessionRef.current,
+        })
+        .select()
+        .single()
+
+      if (newChat) {
+        currentChatId = newChat.id
+        chatIdRef.current = newChat.id
+        setChatId(newChat.id)
+        setChats(prev => [newChat, ...prev])
+      }
     }
 
+    // ── Optimistic user message ──────────────────────────────────────────
     setMessages(prev => [...prev, { role: 'user', text: q, sources: [] }])
     setLoading(true)
+
+    // Save user message to Supabase
+    if (currentChatId) {
+      supabase.from('messages').insert({
+        chat_id: currentChatId,
+        role: 'user',
+        content: q,
+        sources: [],
+      }).then(() => {})
+    }
+
+    // Save topic to memory (the question itself is the topic signal)
+    saveTopic?.(q)
 
     try {
       const res = await fetch('/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionRef.current, question: q }),
+        body: JSON.stringify({
+          session_id:   sessionRef.current,
+          question:     q,
+          user_context: buildMemoryContext?.() || null,
+        }),
       })
 
       if (!res.ok) {
@@ -104,22 +151,40 @@ export function useChat(showToast) {
       }
 
       const d = await res.json()
-      setMessages(prev => [...prev, { role: 'assistant', text: d.answer, sources: d.sources || [] }])
+      const assistantMsg = { role: 'assistant', text: d.answer, sources: d.sources || [] }
+      setMessages(prev => [...prev, assistantMsg])
+
+      // Save assistant message to Supabase
+      if (currentChatId) {
+        supabase.from('messages').insert({
+          chat_id: currentChatId,
+          role: 'assistant',
+          content: d.answer,
+          sources: d.sources || [],
+        }).then(() => {})
+      }
+
+      // Update chat's updated_at
+      if (currentChatId) {
+        supabase.from('chats').update({ updated_at: new Date().toISOString() })
+          .eq('id', currentChatId).then(() => {})
+      }
+
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', text: `⚠️ ${err.message}`, sources: [] }])
+      setMessages(prev => [...prev, { role: 'assistant', text: `Error: ${err.message}`, sources: [] }])
       showToast(err.message, 'err')
     } finally {
       setLoading(false)
     }
-  }, [chatId, loading, showToast])
+  }, [loading, userId, showToast, buildMemoryContext, saveTopic])
 
   return {
     messages,
     chats,
-    docs,
     chatId,
     loading,
-    uploadProgress,
+    chatsLoading,
+    loadChatList,
     startNewChat,
     loadChat,
     sendMessage,

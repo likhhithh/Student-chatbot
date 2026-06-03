@@ -7,18 +7,14 @@ import InputZone from './components/InputZone'
 import ToastContainer from './components/ToastContainer'
 import { useChat } from './hooks/useChat'
 import { useToast } from './hooks/useToast'
+import { useMemory } from './hooks/useMemory'
 import './App.css'
 
 export default function App() {
-  const [session, setSession]       = useState(undefined) // undefined = loading
+  const [session, setSession]         = useState(undefined)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [pendingPrompt, setPendingPrompt] = useState('')
-  const { toasts, showToast }       = useToast()
-
-  const {
-    messages, chats, chatId, loading,
-    startNewChat, loadChat, sendMessage, uploadFiles,
-  } = useChat(showToast)
+  const { toasts, showToast }         = useToast()
 
   // Auth listener
   useEffect(() => {
@@ -26,6 +22,22 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
     return () => subscription.unsubscribe()
   }, [])
+
+  const userId = session?.user?.id
+
+  // Memory hook — per user
+  const { memories, saveTopic, buildContextString } = useMemory(userId)
+
+  // Chat hook — persists to Supabase
+  const {
+    messages, chats, chatId, loading, chatsLoading,
+    loadChatList, startNewChat, loadChat, sendMessage, uploadFiles,
+  } = useChat(userId, showToast, buildContextString, saveTopic)
+
+  // Load chat list when user is known
+  useEffect(() => {
+    if (userId) loadChatList()
+  }, [userId, loadChatList])
 
   const handleSend = useCallback(async (question, files) => {
     if (files.length > 0) await uploadFiles(files)
@@ -40,24 +52,26 @@ export default function App() {
   if (session === undefined) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
-        <img src="/studygpt-logo.png" alt="StudyGPT" style={{ height: 36, opacity: 0.6 }} />
+        <img src="/studygpt-logo.png" alt="StudyGPT" style={{ height: 36, opacity: 0.5 }} />
       </div>
     )
   }
 
-  // Not logged in → auth screen
   if (!session) return <Auth />
 
-  // Logged in → main app
   const user = session.user
-  const chatTitle = chatId ? (chats.find(c => c.id === chatId)?.title || 'Chat') : 'New conversation'
+  const chatTitle = chatId
+    ? (chats.find(c => c.id === chatId)?.title || 'Chat')
+    : 'New conversation'
 
   return (
     <div className="app">
       <Sidebar
         open={sidebarOpen}
         chats={chats}
+        chatsLoading={chatsLoading}
         activeChatId={chatId}
+        memories={memories}
         user={user}
         onNewChat={startNewChat}
         onLoadChat={loadChat}

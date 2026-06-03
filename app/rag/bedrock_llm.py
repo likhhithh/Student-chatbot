@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 class BedrockLLM:
     """
-    Bedrock Converse API wrapper — works for any model that supports the Converse API
-    (Anthropic Claude, Amazon Titan, OpenAI on Bedrock, Meta Llama, etc.).
+    Bedrock Converse API wrapper — works for Claude, OpenAI on Bedrock, Llama, Titan, etc.
     """
 
     def __init__(
@@ -47,7 +46,33 @@ class BedrockLLM:
                 "temperature": self._temperature,
             },
         )
-        return response["output"]["message"]["content"][0]["text"].strip()
+
+        logger.debug("Bedrock raw response: %s", response)
+
+        # Extract text robustly — different models use different content block shapes
+        try:
+            content_blocks = response["output"]["message"]["content"]
+            parts = []
+            for block in content_blocks:
+                if "text" in block:
+                    parts.append(block["text"])
+                elif "content" in block:
+                    # Some models nest content one level deeper
+                    inner = block["content"]
+                    if isinstance(inner, str):
+                        parts.append(inner)
+                    elif isinstance(inner, list):
+                        for ib in inner:
+                            if isinstance(ib, dict) and "text" in ib:
+                                parts.append(ib["text"])
+            if parts:
+                return " ".join(parts).strip()
+        except (KeyError, IndexError, TypeError):
+            pass
+
+        # Last-resort: log the shape so we can fix it
+        logger.error("Unexpected Bedrock response shape: %s", response)
+        return ""
 
 
 @lru_cache(maxsize=1)

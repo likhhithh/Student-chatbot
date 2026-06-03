@@ -1,4 +1,8 @@
-export default function Sidebar({ open, chats, activeChatId, user, onNewChat, onLoadChat, onToggle, onSignOut }) {
+export default function Sidebar({
+  open, chats, chatsLoading, activeChatId,
+  memories, user,
+  onNewChat, onLoadChat, onToggle, onSignOut,
+}) {
   if (!open) return null
 
   const avatar = user?.user_metadata?.avatar_url
@@ -7,7 +11,7 @@ export default function Sidebar({ open, chats, activeChatId, user, onNewChat, on
 
   return (
     <aside className="sidebar">
-      {/* Top — logo */}
+      {/* Logo */}
       <div className="sb-top">
         <div className="logo-wrap">
           <img src="/studygpt-logo.png" alt="StudyGPT" className="sb-logo-img" />
@@ -28,11 +32,18 @@ export default function Sidebar({ open, chats, activeChatId, user, onNewChat, on
       </button>
 
       {/* Chat history */}
-      <div className="sb-section-label">Recent chats</div>
+      <div className="sb-section-label">Conversations</div>
       <div className="chat-list">
-        {chats.length === 0
-          ? <div className="doc-item" style={{ padding: '8px 4px', fontStyle: 'italic', fontSize: 12 }}>No chats yet</div>
-          : chats.slice(0, 40).map(c => (
+        {chatsLoading ? (
+          <div className="sb-loading">
+            <div className="sb-skeleton" /><div className="sb-skeleton" /><div className="sb-skeleton" />
+          </div>
+        ) : chats.length === 0 ? (
+          <div className="doc-item" style={{ padding: '8px 4px', fontStyle: 'italic', fontSize: 12 }}>
+            No conversations yet
+          </div>
+        ) : (
+          chats.map(c => (
             <div
               key={c.id}
               className={`chat-item ${c.id === activeChatId ? 'active' : ''}`}
@@ -45,8 +56,23 @@ export default function Sidebar({ open, chats, activeChatId, user, onNewChat, on
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
             </div>
           ))
-        }
+        )}
       </div>
+
+      {/* Memory section */}
+      {memories.length > 0 && (
+        <div className="doc-section">
+          <div className="sb-section-label" style={{ padding: '0 0 6px' }}>Recent topics</div>
+          {memories.slice(0, 6).map((m, i) => (
+            <div key={m.id || i} className="doc-item" title={m.topic}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ flexShrink: 0, opacity: 0.5 }}>
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span style={{ fontSize: 11 }}>{m.topic.length > 28 ? m.topic.slice(0, 28) + '…' : m.topic}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* User footer */}
       <div className="sb-user">

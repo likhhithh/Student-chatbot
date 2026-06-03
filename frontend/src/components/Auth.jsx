@@ -32,7 +32,7 @@ export default function Auth() {
       options: { emailRedirectTo: window.location.origin },
     })
     if (error) flash(error.message, false)
-    else flash('Check your inbox — magic link sent! ✉️')
+    else flash('Check your inbox — magic link sent!')
     setLoading(false)
   }
 
@@ -87,11 +87,11 @@ export default function Auth() {
           <button
             style={{ ...s.tab, ...(tab === 'magic' ? s.tabActive : {}) }}
             onClick={() => { setTab('magic'); clearMsg() }}
-          >✨ Magic Link</button>
+          >Magic Link</button>
           <button
             style={{ ...s.tab, ...(tab === 'password' ? s.tabActive : {}) }}
             onClick={() => { setTab('password'); clearMsg() }}
-          >🔑 Email &amp; Password</button>
+          >Email &amp; Password</button>
         </div>
 
         {/* Magic link form */}

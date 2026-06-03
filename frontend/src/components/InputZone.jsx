@@ -2,9 +2,9 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 
 function fileIcon(name) {
   const ext = (name.split('.').pop() || '').toLowerCase()
-  if (ext === 'pdf') return '📄'
-  if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return '🖼️'
-  return '📎'
+  if (ext === 'pdf') return 'PDF'
+  if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) return 'IMG'
+  return 'FILE'
 }
 
 export default function InputZone({ onSend, loading, pendingPrompt, onPromptConsumed }) {

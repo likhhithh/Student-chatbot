@@ -4,7 +4,7 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from app.prompts.qa_prompt import QA_SYSTEM_INSTRUCTIONS, QA_USER_TEMPLATE
 from app.rag.bedrock_llm import get_bedrock_llm
@@ -22,7 +22,7 @@ class AnswerResult:
 
 
 class ChatMemory:
-    def __init__(self, max_turns: int = 6) -> None:
+    def __init__(self, max_turns: int = 10) -> None:
         self.max_turns = max_turns
         self._turns: List[Tuple[str, str]] = []
 
@@ -31,7 +31,22 @@ class ChatMemory:
         if len(self._turns) > self.max_turns:
             self._turns = self._turns[-self.max_turns:]
 
-    def format_for_prompt(self, max_chars: int = 2500) -> str:
+    def restore(self, messages: List[Dict[str, str]]) -> None:
+        """Restore past messages into memory (pairs of user/assistant turns)."""
+        self._turns.clear()
+        user_msg = None
+        for m in messages:
+            role = m.get("role", "")
+            content = m.get("content", "").strip()
+            if role == "user":
+                user_msg = content
+            elif role == "assistant" and user_msg:
+                self._turns.append((user_msg, content))
+                user_msg = None
+        if len(self._turns) > self.max_turns:
+            self._turns = self._turns[-self.max_turns:]
+
+    def format_for_prompt(self, max_chars: int = 3000) -> str:
         if not self._turns:
             return ""
         blocks: List[str] = []
@@ -81,10 +96,20 @@ def _normalize_answer(text: str) -> str:
     return cleaned
 
 
-def _build_prompt(question: str, context: str, chat_history: str) -> str:
+def _build_prompt(
+    question: str,
+    context: str,
+    chat_history: str,
+    user_context: Optional[str] = None,
+) -> str:
     parts: List[str] = [QA_SYSTEM_INSTRUCTIONS.strip()]
+
+    if user_context:
+        parts.append("USER MEMORY (topics this student has previously studied):\n" + user_context.strip())
+
     if chat_history:
         parts.append("CHAT HISTORY:\n" + chat_history.strip())
+
     parts.append(QA_USER_TEMPLATE.format(context=context.strip(), question=question.strip()).strip())
     return "\n\n".join(parts).strip()
 
@@ -98,13 +123,22 @@ class RAGChain:
     def clear_session(self, session_id: str) -> None:
         self._sessions.clear(session_id)
 
-    def answer(self, session_id: str, question: str) -> AnswerResult:
+    def restore_session(self, session_id: str, messages: List[Dict[str, str]]) -> None:
+        mem = self._sessions.get(session_id)
+        mem.restore(messages)
+
+    def answer(
+        self,
+        session_id: str,
+        question: str,
+        user_context: Optional[str] = None,
+    ) -> AnswerResult:
         q = (question or "").strip()
         if not q:
             return AnswerResult(answer=IDK, sources=[])
 
         memory = self._sessions.get(session_id)
-        chat_history = memory.format_for_prompt(max_chars=2500)
+        chat_history = memory.format_for_prompt(max_chars=3000)
 
         context, retrieved = self._retriever.build_context(query=q)
 
@@ -112,7 +146,12 @@ class RAGChain:
             memory.add_turn(q, IDK)
             return AnswerResult(answer=IDK, sources=[])
 
-        prompt = _build_prompt(question=q, context=context, chat_history=chat_history)
+        prompt = _build_prompt(
+            question=q,
+            context=context,
+            chat_history=chat_history,
+            user_context=user_context,
+        )
         raw = self._llm.generate(prompt)
         answer = _normalize_answer(raw)
 

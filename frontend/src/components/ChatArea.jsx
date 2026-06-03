@@ -3,10 +3,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
 const PROMPT_CARDS = [
-  { icon: '📝', title: 'Summarize key concepts', sub: 'From my uploaded notes', text: 'Summarize the key concepts from my notes' },
-  { icon: '💡', title: 'Explain in simple terms', sub: 'Any topic from the material', text: 'Explain this topic in simple terms' },
-  { icon: '🔢', title: 'Important formulas', sub: 'To remember for the exam', text: 'What are the important formulas I should remember for the exam?' },
-  { icon: '🧠', title: 'Quiz me', sub: 'Test my understanding with 5 questions', text: 'Quiz me on this chapter with 5 questions' },
+  { title: 'Summarize key concepts', sub: 'From my uploaded notes', text: 'Summarize the key concepts from my notes' },
+  { title: 'Explain in simple terms', sub: 'Any topic from the material', text: 'Explain this topic in simple terms' },
+  { title: 'Important formulas', sub: 'To remember for the exam', text: 'What are the important formulas I should remember for the exam?' },
+  { title: 'Quiz me', sub: 'Test my understanding with 5 questions', text: 'Quiz me on this chapter with 5 questions' },
 ]
 
 export default function ChatArea({ messages, loading, onPromptSelect }) {
@@ -32,7 +32,6 @@ export default function ChatArea({ messages, loading, onPromptSelect }) {
             <div className="prompts">
               {PROMPT_CARDS.map((card, i) => (
                 <div key={i} className="prompt-card" onClick={() => onPromptSelect?.(card.text)}>
-                  <div className="pi">{card.icon}</div>
                   <div className="pt">{card.title}</div>
                   <div className="ps">{card.sub}</div>
                 </div>
@@ -47,7 +46,7 @@ export default function ChatArea({ messages, loading, onPromptSelect }) {
 
         {loading && (
           <div className="msg assistant">
-            <div className="msg-av">📚</div>
+            <div className="msg-av">S</div>
             <div className="msg-body">
               <div className="msg-name">StudyGPT</div>
               <div className="dots">
@@ -67,7 +66,7 @@ function Message({ role, text, sources }) {
   return (
     <div className={`msg ${role}`}>
       <div className="msg-av">
-        {role === 'user' ? 'U' : '📚'}
+        {role === 'user' ? 'U' : 'S'}
       </div>
       <div className="msg-body">
         <div className="msg-name">{role === 'user' ? 'You' : 'StudyGPT'}</div>
@@ -80,7 +79,7 @@ function Message({ role, text, sources }) {
         {sources && sources.length > 0 && (
           <div className="sources">
             {sources.map((s, i) => (
-              <span key={i} className="src">📄 {s}</span>
+              <span key={i} className="src">{s}</span>
             ))}
           </div>
         )}

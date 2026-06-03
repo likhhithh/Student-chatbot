@@ -92,6 +92,15 @@ class AskRequest(BaseModel):
         description="Client session identifier for chat memory. If omitted, server creates one.",
     )
     question: str = Field(..., min_length=1, description="User question")
+    user_context: Optional[str] = Field(
+        default=None,
+        description="Long-term memory context injected from the client (recent topics, preferences).",
+    )
+
+
+class RestoreRequest(BaseModel):
+    session_id: str
+    messages: List[Dict[str, str]]  # [{"role": "user"|"assistant", "content": "..."}]
 
 
 class AskResponse(BaseModel):
@@ -109,7 +118,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     logging.basicConfig(
-        level=logging.INFO if settings.environment != "test" else logging.WARNING,
+        level=logging.DEBUG if settings.environment == "dev" else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
@@ -243,12 +252,24 @@ def create_app() -> FastAPI:
 
         chain = get_chain()
         try:
-            result: AnswerResult = await run_in_threadpool(chain.answer, session_id, question)
+            result: AnswerResult = await run_in_threadpool(
+                chain.answer, session_id, question, req.user_context
+            )
         except Exception as e:
             logger.exception("Failed to answer question: %s", e)
             raise HTTPException(status_code=500, detail="Failed to generate an answer.") from e
 
         return AskResponse(session_id=session_id, answer=result.answer, sources=result.sources)
+
+    @app.post("/session/restore")
+    async def restore_session(req: RestoreRequest) -> Dict[str, Any]:
+        """Restore past messages into the server-side session memory."""
+        sid = (req.session_id or "").strip()
+        if not sid:
+            raise HTTPException(status_code=400, detail="session_id is required")
+        chain = get_chain()
+        await run_in_threadpool(chain.restore_session, sid, req.messages)
+        return {"session_id": sid, "restored": len(req.messages)}
 
     @app.post("/session/clear", response_model=ClearSessionResponse)
     async def clear_session(session_id: str) -> ClearSessionResponse:
