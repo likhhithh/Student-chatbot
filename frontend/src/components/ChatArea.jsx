@@ -1,0 +1,90 @@
+import { useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+
+const PROMPT_CARDS = [
+  { icon: '📝', title: 'Summarize key concepts', sub: 'From my uploaded notes', text: 'Summarize the key concepts from my notes' },
+  { icon: '💡', title: 'Explain in simple terms', sub: 'Any topic from the material', text: 'Explain this topic in simple terms' },
+  { icon: '🔢', title: 'Important formulas', sub: 'To remember for the exam', text: 'What are the important formulas I should remember for the exam?' },
+  { icon: '🧠', title: 'Quiz me', sub: 'Test my understanding with 5 questions', text: 'Quiz me on this chapter with 5 questions' },
+]
+
+export default function ChatArea({ messages, loading, onPromptSelect }) {
+  const bottomRef = useRef(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loading])
+
+  const showWelcome = messages.length === 0 && !loading
+
+  return (
+    <div className="chat-scroll">
+      <div className="chat-wrap">
+        {showWelcome && (
+          <div className="welcome">
+            <img src="/studygpt-logo.png" alt="StudyGPT" className="wlc-logo-img" />
+            <h1 className="wlc-h">Welcome to StudyGPT</h1>
+            <p className="wlc-sub">
+              Upload your PDFs or photos of notes, then ask anything.
+              I'll answer strictly from your documents — powered by AWS Bedrock.
+            </p>
+            <div className="prompts">
+              {PROMPT_CARDS.map((card, i) => (
+                <div key={i} className="prompt-card" onClick={() => onPromptSelect?.(card.text)}>
+                  <div className="pi">{card.icon}</div>
+                  <div className="pt">{card.title}</div>
+                  <div className="ps">{card.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((msg, i) => (
+          <Message key={i} {...msg} />
+        ))}
+
+        {loading && (
+          <div className="msg assistant">
+            <div className="msg-av">📚</div>
+            <div className="msg-body">
+              <div className="msg-name">StudyGPT</div>
+              <div className="dots">
+                <div className="dot" /><div className="dot" /><div className="dot" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  )
+}
+
+function Message({ role, text, sources }) {
+  return (
+    <div className={`msg ${role}`}>
+      <div className="msg-av">
+        {role === 'user' ? 'U' : '📚'}
+      </div>
+      <div className="msg-body">
+        <div className="msg-name">{role === 'user' ? 'You' : 'StudyGPT'}</div>
+        <div className="msg-text">
+          {role === 'assistant'
+            ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+            : <span>{text}</span>
+          }
+        </div>
+        {sources && sources.length > 0 && (
+          <div className="sources">
+            {sources.map((s, i) => (
+              <span key={i} className="src">📄 {s}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

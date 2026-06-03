@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     )
 
     # --- Filesystem paths (kept relative to repo root by default) ---
-    # We resolve relative paths against the repository root to avoid surprises when run from different CWDs.
     repo_root: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[1],
         description="Resolved project root (student-study-chatbot/).",
@@ -39,7 +38,7 @@ class Settings(BaseSettings):
 
     # --- Chroma / retrieval ---
     chroma_collection: str = Field(
-        default="study_docs",
+        default="study_docs_bedrock",
         description="Chroma collection name used to store document embeddings.",
     )
     top_k: int = Field(default=4, ge=1, le=20, description="Number of chunks to retrieve per question.")
@@ -49,7 +48,7 @@ class Settings(BaseSettings):
         default=1000,
         ge=200,
         le=4000,
-        description="Chunk size in characters. Character-based is predictable and fast on CPU.",
+        description="Chunk size in characters.",
     )
     chunk_overlap: int = Field(
         default=150,
@@ -58,35 +57,33 @@ class Settings(BaseSettings):
         description="Overlap improves answer continuity across chunk boundaries.",
     )
 
-    # --- Embeddings ---
-    embedding_model_name: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        description="Fast, high-quality embedding model suitable for CPU usage.",
+    # --- AWS Bedrock credentials ---
+    aws_access_key_id: Optional[str] = Field(default=None, description="AWS IAM access key ID.")
+    aws_secret_access_key: Optional[str] = Field(default=None, description="AWS IAM secret access key.")
+    aws_region: str = Field(default="ap-south-1", description="AWS region for Bedrock.")
+
+    # --- Bedrock model IDs ---
+    bedrock_chat_model_id: str = Field(
+        default="openai.gpt-oss-120b-1:0",
+        description="Bedrock model ID for the chat/LLM. Must be enabled in your Bedrock console.",
+    )
+    bedrock_embedding_model_id: str = Field(
+        default="amazon.titan-embed-text-v2:0",
+        description="Bedrock model ID for embeddings (Amazon Titan Text V2, 1024-dim).",
     )
 
-    # --- LLM (Transformers) ---
-    llm_model_name: str = Field(
-        default="google/flan-t5-base",
-        description=(
-            "Instruction-tuned model that runs on CPU reasonably well. "
-            "We use seq2seq generation for stable 'answer from context' behavior."
-        ),
-    )
-    llm_device: Literal["cpu"] = Field(
-        default="cpu",
-        description="CPU-only per project constraints (MacBook Air M1).",
-    )
+    # --- Generation settings ---
     max_new_tokens: int = Field(
-        default=256,
+        default=512,
         ge=16,
-        le=1024,
-        description="Caps response length for predictable latency and cost.",
+        le=4096,
+        description="Max tokens for LLM response.",
     )
     temperature: float = Field(
         default=0.0,
         ge=0.0,
         le=1.5,
-        description="0.0 encourages deterministic extraction from context (reduces hallucinations).",
+        description="0.0 encourages deterministic extraction from context.",
     )
 
     cors_allow_origins: str = Field(

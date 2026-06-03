@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from langchain_core.documents import Document
 
 from app.config import get_settings
-from app.rag.embeddings import EmbeddingConfig, SentenceTransformerEmbeddings
+from app.rag.bedrock_embeddings import BedrockTitanEmbeddings, get_bedrock_embedder
 from app.rag.vectorstore import ChromaVectorStore, get_vectorstore
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ class RAGRetriever:
     def __init__(
         self,
         vectorstore: ChromaVectorStore,
-        embedder: SentenceTransformerEmbeddings,
+        embedder: BedrockTitanEmbeddings,
         config: RetrieverConfig,
     ) -> None:
         self._vs = vectorstore
@@ -147,17 +147,8 @@ class RAGRetriever:
         return context, chunks
 
 
-@lru_cache(maxsize=1)
-def _get_embedder() -> SentenceTransformerEmbeddings:
-    """
-    Cached embedder instance.
-
-    Why cache:
-    - Embedding model load dominates startup on CPU.
-    - Both ingestion and retrieval should reuse the same loaded model.
-    """
-    settings = get_settings()
-    return SentenceTransformerEmbeddings(EmbeddingConfig(model_name=settings.embedding_model_name))
+def _get_embedder() -> BedrockTitanEmbeddings:
+    return get_bedrock_embedder()
 
 
 @lru_cache(maxsize=1)

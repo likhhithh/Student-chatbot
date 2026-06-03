@@ -14,9 +14,9 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.config import get_settings
+from app.rag.bedrock_embeddings import get_bedrock_embedder
 from app.rag.chain import AnswerResult, get_chain
 from app.rag.chunking import chunk_documents
-from app.rag.embeddings import EmbeddingConfig, SentenceTransformerEmbeddings
 from app.rag.loader import load_image, load_pdf
 from app.rag.vectorstore import get_vectorstore
 
@@ -162,7 +162,7 @@ def create_app() -> FastAPI:
 
         uploads_dir = settings.resolved_uploads_dir()
         vs = get_vectorstore()
-        embedder = SentenceTransformerEmbeddings(EmbeddingConfig(model_name=settings.embedding_model_name))
+        embedder = get_bedrock_embedder()
 
         stored_files: List[str] = []
         total_pages = 0

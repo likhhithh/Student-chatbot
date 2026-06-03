@@ -35,6 +35,9 @@ tokenizers==0.20.3                # Must satisfy chromadb<=0.5.23 requirement
 langchain-core==0.3.29            # Document + runnable primitives
 langchain-text-splitters==0.3.5   # RecursiveCharacterTextSplitter for chunking
 
+# --- AWS Bedrock ---
+boto3>=1.34.0                     # AWS SDK for Bedrock LLM + Titan embeddings
+
 # --- Tests ---
 pytest==8.3.4                     # Test runner
 httpx==0.28.1                     # HTTP client for FastAPI tests

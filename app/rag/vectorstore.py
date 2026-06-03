@@ -9,7 +9,6 @@ from chromadb.api.models.Collection import Collection
 from langchain_core.documents import Document
 
 from app.config import get_settings
-from app.rag.embeddings import SentenceTransformerEmbeddings
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +83,7 @@ class ChromaVectorStore:
     def upsert_documents(
         self,
         docs: Iterable[Document],
-        embedder: SentenceTransformerEmbeddings,
+        embedder: Any,
     ) -> int:
         """
         Upsert chunks into Chroma.
@@ -198,7 +197,7 @@ class ChromaVectorStore:
     def similarity_search(
         self,
         query: str,
-        embedder: SentenceTransformerEmbeddings,
+        embedder: Any,
         top_k: int,
         where: Optional[Dict[str, Any]] = None,
     ) -> List[Tuple[Document, float]]:
