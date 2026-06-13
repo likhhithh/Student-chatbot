@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
-from dataclasses import dataclass
+import json as _json
+from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from app.prompts.qa_prompt import QA_SYSTEM_INSTRUCTIONS, QA_USER_TEMPLATE
 from app.rag.bedrock_llm import get_bedrock_llm
@@ -19,6 +20,8 @@ IDK = "I don't know"
 class AnswerResult:
     answer: str
     sources: List[str]
+    confidence: str = "medium"
+    followups: List[str] = field(default_factory=list)
 
 
 class ChatMemory:
@@ -84,6 +87,17 @@ class InMemorySessionStore:
             del self._store[session_id]
 
 
+def _calc_confidence(chunks: List[RetrievedChunk]) -> str:
+    if not chunks:
+        return "low"
+    best_dist = min(c.distance for c in chunks)
+    if best_dist < 0.25:
+        return "high"
+    if best_dist < 0.50:
+        return "medium"
+    return "low"
+
+
 def _normalize_answer(text: str) -> str:
     cleaned = (text or "").strip()
     if not cleaned:
@@ -114,6 +128,27 @@ def _build_prompt(
     return "\n\n".join(parts).strip()
 
 
+def _generate_followups(llm: Any, question: str, answer: str) -> List[str]:
+    prompt = (
+        "Based on this Q&A, generate exactly 3 short follow-up questions a student might ask next.\n"
+        "Return ONLY a JSON array of 3 strings. No explanation, no markdown, no extra text.\n\n"
+        f"Question: {question}\n"
+        f"Answer: {answer[:600]}\n\n"
+        "JSON array:"
+    )
+    try:
+        raw = llm.generate(prompt).strip()
+        start = raw.find("[")
+        end = raw.rfind("]") + 1
+        if start >= 0 and end > start:
+            items = _json.loads(raw[start:end])
+            if isinstance(items, list):
+                return [str(q).strip() for q in items[:3] if q]
+    except Exception:
+        pass
+    return []
+
+
 class RAGChain:
     def __init__(self) -> None:
         self._retriever = get_retriever()
@@ -140,7 +175,8 @@ class RAGChain:
         memory = self._sessions.get(session_id)
         chat_history = memory.format_for_prompt(max_chars=3000)
 
-        context, retrieved = self._retriever.build_context(query=q)
+        where = {"session_id": session_id} if session_id else None
+        context, retrieved = self._retriever.build_context(query=q, where=where)
 
         if not context.strip():
             memory.add_turn(q, IDK)
@@ -159,7 +195,56 @@ class RAGChain:
         sources = _unique_sources(retrieved)
 
         memory.add_turn(q, final)
-        return AnswerResult(answer=final, sources=sources)
+        return AnswerResult(answer=final, sources=sources, confidence=_calc_confidence(retrieved))
+
+
+    def answer_stream(
+        self,
+        session_id: str,
+        question: str,
+        user_context: Optional[str] = None,
+    ) -> Generator[Union[str, AnswerResult], None, None]:
+        q = (question or "").strip()
+        if not q:
+            yield IDK
+            yield AnswerResult(answer=IDK, sources=[], confidence="low")
+            return
+
+        memory = self._sessions.get(session_id)
+        chat_history = memory.format_for_prompt(max_chars=3000)
+        where = {"session_id": session_id} if session_id else None
+        context, retrieved = self._retriever.build_context(query=q, where=where)
+
+        if not context.strip():
+            memory.add_turn(q, IDK)
+            yield IDK
+            yield AnswerResult(answer=IDK, sources=[], confidence="low")
+            return
+
+        prompt = _build_prompt(
+            question=q,
+            context=context,
+            chat_history=chat_history,
+            user_context=user_context,
+        )
+
+        parts: List[str] = []
+        first = True
+        for token in self._llm.generate_stream(prompt):
+            if first:
+                token = token.lstrip('| \n')
+                first = False
+                if not token:
+                    continue
+            parts.append(token)
+            yield token
+
+        answer = _normalize_answer("".join(parts))
+        final = IDK if not answer or answer == IDK else answer
+        sources = _unique_sources(retrieved)
+        memory.add_turn(q, final)
+        followups = _generate_followups(self._llm, q, final) if final != IDK else []
+        yield AnswerResult(answer=final, sources=sources, confidence=_calc_confidence(retrieved), followups=followups)
 
 
 def _unique_sources(chunks: List[RetrievedChunk]) -> List[str]:

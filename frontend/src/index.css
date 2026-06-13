@@ -44,3 +44,20 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+[data-theme="dark"] {
+  --bg: #18181b;
+  --sb: #111113;
+  --panel: #1c1c1f;
+  --txt: #f4f4f5;
+  --sub: #9ca3af;
+  --bdr: #27272a;
+  --hov: #27272a;
+  --inp: #1c1c1f;
+  --acc: #10a37f;
+  --acc-dark: #0d8c6d;
+  --acc-light: #0b2a22;
+  --user-bubble: #10a37f;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.3);
+}

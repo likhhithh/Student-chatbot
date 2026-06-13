@@ -14,6 +14,17 @@ from app.rag.vectorstore import ChromaVectorStore, get_vectorstore
 logger = logging.getLogger(__name__)
 
 
+def _rerank(query: str, chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+    if len(chunks) <= 1:
+        return chunks
+    query_words = set(query.lower().split())
+    def score(c: RetrievedChunk) -> float:
+        text_words = set(c.document.page_content.lower().split())
+        overlap = len(query_words & text_words) / max(len(query_words), 1)
+        return c.distance * 0.7 - overlap * 0.3
+    return sorted(chunks, key=score)
+
+
 @dataclass(frozen=True)
 class RetrieverConfig:
     top_k: int
@@ -138,7 +149,7 @@ class RAGRetriever:
         """
         Retrieve and format context for the QA prompt.
         """
-        chunks = self.retrieve(query=query, where=where)
+        chunks = _rerank(query, self.retrieve(query=query, where=where))
         if not chunks:
             return "", []
 

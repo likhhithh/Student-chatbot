@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -141,20 +144,6 @@ def create_app() -> FastAPI:
             return JSONResponse({"error": "Frontend not built", "static_dir": str(_STATIC_DIR)}, status_code=503)
         return FileResponse(str(index))
 
-    # Catch-all: serve static files (logo, favicon, etc.) or fall back to index.html
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str):
-        # Serve any existing static file first (logo, icons, etc.)
-        static_file = _STATIC_DIR / full_path
-        if static_file.exists() and static_file.is_file():
-            return FileResponse(str(static_file))
-        # Fall back to index.html for all SPA routes
-        index = _STATIC_DIR / "index.html"
-        if not index.exists():
-            from fastapi.responses import JSONResponse
-            return JSONResponse({"error": "Frontend not built"}, status_code=503)
-        return FileResponse(str(index))
-
     # CORS is required when Streamlit and FastAPI are served from different origins.
     origins = settings.cors_origins_list()
     if origins == ["*"]:
@@ -185,7 +174,10 @@ def create_app() -> FastAPI:
         }
 
     @app.post("/upload", response_model=UploadResponse)
-    async def upload_pdfs(files: List[UploadFile] = File(...)) -> UploadResponse:
+    async def upload_pdfs(
+        files: List[UploadFile] = File(...),
+        session_id: Optional[str] = Form(None),
+    ) -> UploadResponse:
         """
         Upload one or more PDFs, extract text, chunk, embed, and upsert into ChromaDB.
         """
@@ -251,6 +243,11 @@ def create_app() -> FastAPI:
                 # Don't index empty docs; keep it explicit for user feedback.
                 continue
 
+            # Tag every chunk with session_id so retrieval can be scoped per conversation.
+            if session_id:
+                for doc in chunks:
+                    doc.metadata["session_id"] = session_id
+
             # Upsert into Chroma (embed + store)
             upserted = await run_in_threadpool(vs.upsert_documents, chunks, embedder)
             total_chunks += upserted
@@ -284,6 +281,49 @@ def create_app() -> FastAPI:
 
         return AskResponse(session_id=session_id, answer=result.answer, sources=result.sources)
 
+    @app.post("/ask/stream")
+    async def ask_stream(req: AskRequest) -> StreamingResponse:
+        """Stream answer tokens via Server-Sent Events."""
+        session_id = (req.session_id or "").strip() or uuid.uuid4().hex
+        question = (req.question or "").strip()
+        if not question:
+            raise HTTPException(status_code=400, detail="Question cannot be empty.")
+
+        chain = get_chain()
+        loop = asyncio.get_event_loop()
+        q: asyncio.Queue = asyncio.Queue()
+
+        def producer() -> None:
+            try:
+                for item in chain.answer_stream(session_id, question, req.user_context):
+                    loop.call_soon_threadsafe(q.put_nowait, item)
+            except Exception as exc:
+                loop.call_soon_threadsafe(q.put_nowait, exc)
+            finally:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        threading.Thread(target=producer, daemon=True).start()
+
+        async def event_stream():
+            from app.rag.chain import AnswerResult
+            while True:
+                item = await q.get()
+                if item is None:
+                    break
+                if isinstance(item, Exception):
+                    yield f"data: {json.dumps({'error': str(item)})}\n\n"
+                    break
+                if isinstance(item, str):
+                    yield f"data: {json.dumps({'token': item})}\n\n"
+                elif isinstance(item, AnswerResult):
+                    yield f"data: {json.dumps({'done': True, 'session_id': session_id, 'sources': item.sources, 'confidence': item.confidence, 'followups': item.followups})}\n\n"
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     @app.post("/session/restore")
     async def restore_session(req: RestoreRequest) -> Dict[str, Any]:
         """Restore past messages into the server-side session memory."""
@@ -309,6 +349,58 @@ def create_app() -> FastAPI:
         chain = get_chain()
         await run_in_threadpool(chain.clear_session, sid)
         return ClearSessionResponse(session_id=sid, cleared=True)
+
+    class DocumentInfo(BaseModel):
+        filename: str
+        size_kb: float
+        indexed: bool
+
+    @app.get("/documents", response_model=List[DocumentInfo])
+    def list_documents() -> List[DocumentInfo]:
+        uploads_dir = settings.resolved_uploads_dir()
+        vs = get_vectorstore()
+        indexed_sources = set(vs.list_sources())
+        docs: List[DocumentInfo] = []
+        if uploads_dir.exists():
+            for f in sorted(uploads_dir.iterdir()):
+                if f.is_file() and f.suffix.lower() in _ALLOWED_EXTS:
+                    docs.append(DocumentInfo(
+                        filename=f.name,
+                        size_kb=round(f.stat().st_size / 1024, 1),
+                        indexed=f.name in indexed_sources,
+                    ))
+        return docs
+
+    @app.delete("/documents/{filename}")
+    def delete_document(filename: str):
+        from fastapi.responses import Response
+        safe = _sanitize_filename(filename)
+        uploads_dir = settings.resolved_uploads_dir()
+        file_path = uploads_dir / safe
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found.")
+        vs = get_vectorstore()
+        vs.delete_by_source(safe)
+        file_path.unlink()
+        return Response(status_code=204)
+
+    @app.get("/page-preview")
+    def page_preview(source: str, page: int) -> Dict[str, Any]:
+        vs = get_vectorstore()
+        content = vs.get_chunks_by_source_page(source, page)
+        return {"source": source, "page": page, "content": content}
+
+    # Catch-all MUST be last — any earlier registration will intercept API routes.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa_fallback(full_path: str):
+        static_file = _STATIC_DIR / full_path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(str(static_file))
+        index = _STATIC_DIR / "index.html"
+        if not index.exists():
+            from fastapi.responses import JSONResponse
+            return JSONResponse({"error": "Frontend not built"}, status_code=503)
+        return FileResponse(str(index))
 
     return app
 

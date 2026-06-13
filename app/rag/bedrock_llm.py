@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import Optional
+from typing import Iterator, Optional
 
 import boto3
 
@@ -73,6 +73,20 @@ class BedrockLLM:
         # Last-resort: log the shape so we can fix it
         logger.error("Unexpected Bedrock response shape: %s", response)
         return ""
+
+    def generate_stream(self, prompt: str) -> Iterator[str]:
+        if not prompt.strip():
+            return
+        response = self._client.converse_stream(
+            modelId=self._model_id,
+            messages=[{"role": "user", "content": [{"text": prompt}]}],
+            inferenceConfig={"maxTokens": self._max_tokens, "temperature": self._temperature},
+        )
+        for event in response.get("stream", []):
+            if "contentBlockDelta" in event:
+                delta = event["contentBlockDelta"].get("delta", {})
+                if "text" in delta:
+                    yield delta["text"]
 
 
 @lru_cache(maxsize=1)

@@ -138,6 +138,31 @@ class ChromaVectorStore:
             return
         self._collection.delete(where={"file_sha256": file_sha256})
 
+    def get_chunks_by_source_page(self, source: str, page: int) -> str:
+        result = self._collection.get(
+            where={"source": source},
+            include=["documents", "metadatas"],
+        )
+        docs = result.get("documents") or []
+        metas = result.get("metadatas") or []
+        chunks = [d for d, m in zip(docs, metas) if (m or {}).get("page") is not None and int((m or {}).get("page", -1)) == page]
+        return "\n\n".join(chunks)
+
+    def delete_by_source(self, source: str) -> None:
+        if not source:
+            return
+        self._collection.delete(where={"source": source})
+
+    def list_sources(self) -> List[str]:
+        result = self._collection.get(include=["metadatas"])
+        metadatas = result.get("metadatas") or []
+        seen: set[str] = set()
+        for md in metadatas:
+            s = (md or {}).get("source", "")
+            if s and s not in seen:
+                seen.add(s)
+        return sorted(seen)
+
     def reset_collection(self) -> None:
         """
         Drop and recreate the collection.
