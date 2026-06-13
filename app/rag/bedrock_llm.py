@@ -24,9 +24,8 @@ class BedrockLLM:
         temperature: float = 0.0,
     ) -> None:
         kwargs: dict = {"region_name": region}
-        if aws_access_key_id:
+        if aws_access_key_id and aws_secret_access_key:
             kwargs["aws_access_key_id"] = aws_access_key_id
-        if aws_secret_access_key:
             kwargs["aws_secret_access_key"] = aws_secret_access_key
 
         self._client = boto3.client("bedrock-runtime", **kwargs)
